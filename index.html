@@ -3,27 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Photo Advisor Pixel Engine</title>
+    <title>Photo Advisor Pro 50 - JPG FIX</title>
     <style>
-        :root { --bg: #000; --accent: #00d1b2; --text: #fff; }
-        body, html { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow-x: hidden; }
+        :root { --bg: #000; --accent: #00d1b2; --text: #fff; --card: #1a1a1a; --border: #333; }
+        body, html { height: 100%; margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow-x: hidden; }
+
+        /* Schermata Iniziale */
         .header { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; text-align: center; }
         .btn-upload { background: var(--accent); color: #000; padding: 20px 40px; border-radius: 50px; font-weight: bold; cursor: pointer; font-size: 1.2rem; }
         input[type="file"] { display: none; }
+
+        /* Griglia Anteprime */
         .options-grid { display: none; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; max-width: 1200px; margin: 0 auto; }
-        .option-card { background: #1a1a1a; border-radius: 12px; border: 1px solid #333; overflow: hidden; }
-        .option-card canvas { width: 100%; height: auto; display: block; }
-        .option-card p { font-size: 11px; padding: 10px; margin: 0; text-align: center; color: #888; }
+        .option-card { background: var(--card); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+        .option-card canvas { width: 100%; height: auto; display: block; background: #111; }
+        .option-card p { font-size: 11px; padding: 10px; margin: 0; text-align: center; color: #888; font-weight: bold; }
+
+        /* Modal */
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000; align-items: center; justify-content: center; }
         .modal-content { background: #222; padding: 25px; border-radius: 20px; width: 85%; max-width: 350px; text-align: center; }
-        .btn { width: 100%; padding: 15px; margin: 8px 0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; color: #fff; }
+        .btn { width: 100%; padding: 15px; margin: 8px 0; border: none; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; color: #fff; }
+
+        /* Editor Manuale */
         #manual-editor { display: none; }
-        .preview-sticky { position: sticky; top: 0; background: #000; padding: 10px; z-index: 100; border-bottom: 1px solid #333; }
+        .preview-area { position: sticky; top: 0; background: var(--bg); padding: 10px; z-index: 100; border-bottom: 1px solid var(--border); }
         #mainCanvas { width: 100%; border-radius: 10px; max-height: 45vh; object-fit: contain; display: block; margin: 0 auto; }
-        .controls { padding: 20px; padding-bottom: 120px; display: grid; gap: 15px; }
-        .s-box label { display: flex; justify-content: space-between; font-size: 11px; color: #aaa; text-transform: uppercase; }
+        .controls { padding: 20px; padding-bottom: 120px; display: grid; gap: 20px; }
+        .s-box label { display: flex; justify-content: space-between; font-size: 11px; color: #aaa; margin-bottom: 8px; text-transform: uppercase; }
         input[type="range"] { -webkit-appearance: none; width: 100%; height: 6px; background: #333; border-radius: 10px; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; background: var(--accent); border-radius: 50%; border: 2px solid #fff; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; background: var(--accent); border-radius: 50%; border: 2px solid #fff; }
+        
+        @media (min-width: 768px) { .options-grid { grid-template-columns: repeat(4, 1fr); } .controls { grid-template-columns: 1fr 1fr; } }
     </style>
 </head>
 <body>
@@ -37,19 +47,19 @@
 
     <div class="modal" id="modal">
         <div class="modal-content">
-            <h3 id="stName">Stile</h3>
-            <button class="btn" style="background:#28a745;" onclick="renderAndSave()">SALVA (PROCESSO PIXEL)</button>
-            <button class="btn" style="background:#007bff;" onclick="openEditor()">MODIFICA</button>
-            <button class="btn" style="background:#444;" onclick="closeM()">CHIUDI</button>
+            <h3 id="styleName" style="margin:0 0 20px 0;">Stile</h3>
+            <button class="btn" style="background:#28a745;" onclick="saveFinalJPG()">SALVA JPG</button>
+            <button class="btn" style="background:#007bff;" onclick="goToEditor()">MODIFICA</button>
+            <button class="btn" style="background:#444;" onclick="closeModal()">CHIUDI</button>
         </div>
     </div>
 
     <div id="manual-editor">
-        <div class="preview-sticky">
+        <div class="preview-area">
             <canvas id="mainCanvas"></canvas>
             <div style="display:flex; gap:10px; margin-top:15px">
                 <button class="btn" style="background:#444; margin:0; flex:1" onclick="location.reload()">RESET</button>
-                <button class="btn" style="background:#28a745; margin:0; flex:2" onclick="renderAndSave()">SCARICA</button>
+                <button class="btn" style="background:#28a745; margin:0; flex:2" onclick="saveFinalJPG()">SCARICA JPG</button>
             </div>
         </div>
         <div class="controls" id="sliders"></div>
@@ -64,12 +74,11 @@
     let currentVals = {};
 
     const params = [
-        {id:'exp', n:'Esposizione'}, {id:'cont', n:'Contrasto'}, 
-        {id:'sat', n:'Saturazione'}, {id:'temp', n:'Temperatura'},
-        {id:'black', n:'Punto Nero'}
+        {id:'exp', n:'Esposizione'}, {id:'cont', n:'Contrasto'}, {id:'sat', n:'Saturazione'},
+        {id:'temp', n:'Temperatura'}, {id:'bright', n:'Luminosità'}, {id:'black', n:'Punto Nero'}
     ];
 
-    const styles = [
+        const styles = [
         { name: "Naturale", vals: { exp:100, bril:100, high:100, shad:100, cont:100, bright:100, black:0, sat:100, vib:100, temp:0, tint:0, sharp:0, def:100 } },
         { name: "Vivido", vals: { exp:105, bril:115, high:95, shad:105, cont:110, bright:100, black:5, sat:130, vib:130, temp:5, tint:0, sharp:0.5, def:110 } },
         { name: "Teal & Orange", vals: { exp:95, bril:90, high:110, shad:85, cont:120, bright:95, black:15, sat:110, vib:90, temp:-15, tint:5, sharp:0.8, def:110 } },
@@ -122,7 +131,7 @@
         { name: "Silver Screen", vals: { exp:115, bril:110, high:120, shad:100, cont:125, bright:110, black:10, sat:10, vib:10, temp:-10, tint:0, sharp:1.2, def:120 } }
     ];
 
-    // Setup iniziale controlli
+
     params.forEach(p => {
         const d = document.createElement('div');
         d.className = 's-box';
@@ -159,12 +168,12 @@
             cv.style.filter = getF(s.vals);
             card.innerHTML = `<p>${s.name}</p>`;
             card.prepend(cv);
-            card.onclick = () => { currentVals = s.vals; document.getElementById('stName').innerText = s.name; modal.style.display='flex'; };
+            card.onclick = () => { currentVals = s.vals; document.getElementById('styleName').innerText = s.name; modal.style.display='flex'; };
             grid.appendChild(card);
         });
     }
 
-    function openEditor() {
+    function goToEditor() {
         modal.style.display='none'; grid.style.display='none';
         document.getElementById('manual-editor').style.display='block';
         mainCanvas.width = img.width; mainCanvas.height = img.height;
@@ -174,11 +183,10 @@
             el.value = currentVals[p.id] || 100;
             document.getElementById('v-'+p.id).innerText = el.value;
         });
-        updatePreview();
-        window.scrollTo(0,0);
+        update();
     }
 
-    function updatePreview() {
+    function update() {
         const v = {};
         params.forEach(p => {
             v[p.id] = document.getElementById('i-'+p.id).value;
@@ -188,94 +196,39 @@
         currentVals = v;
     }
 
-    document.querySelectorAll('input[type="range"]').forEach(i => i.oninput = updatePreview);
+    document.querySelectorAll('input[type="range"]').forEach(i => i.oninput = update);
 
-   function renderAndSave() {
-    const tempCv = document.createElement('canvas');
-    const tempCtx = tempCv.getContext('2d');
-    
-    // Ridimensionamento per sicurezza memoria (Max 1600px per mobile)
-    const maxD = 1600;
-    let w = img.width, h = img.height;
-    if(w > maxD || h > maxD) {
-        const r = Math.min(maxD/w, maxD/h);
-        w *= r; h *= r;
-    }
-    
-    tempCv.width = w; tempCv.height = h;
-    tempCtx.drawImage(img, 0, 0, w, h);
+    // --- FUNZIONE DI SALVATAGGIO DEFINITIVA IN JPG ---
+    function saveFinalJPG() {
+        const outCv = document.createElement('canvas');
+        const outCtx = outCv.getContext('2d');
+        
+        // Risoluzione reale
+        outCv.width = img.width;
+        outCv.height = img.height;
 
-    const imageData = tempCtx.getImageData(0, 0, w, h);
-    const d = imageData.data;
+        // APPLICHIAMO IL FILTRO SULLA MATRICE PRIMA DEL DISEGNO
+        outCtx.filter = getF(currentVals);
+        outCtx.drawImage(img, 0, 0);
 
-    // Estrazione parametri (Default 100 o 0)
-    const exposure = (currentVals.exp || 100) / 100;
-    const contrast = (currentVals.cont || 100) / 100;
-    const saturation = (currentVals.sat || 100) / 100;
-    const temperature = (currentVals.temp || 0) / 100;
-    const blackPoint = (currentVals.black || 0); // Valore 0-100
-    const brightness = (currentVals.bright || 100) / 100;
+        // Esportazione in JPG (Qualità 0.9)
+        const dataUrl = outCv.toDataURL('image/jpeg', 0.9);
+        
+        // Gestione universale Mobile/PC
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-    // Calcolo fattore contrasto
-    const intercept = 128 * (1 - contrast);
-
-    for (let i = 0; i < d.length; i += 4) {
-        let r = d[i], g = d[i+1], b = d[i+2];
-
-        // 1. Esposizione e Luminosità
-        const lightMult = exposure * brightness;
-        r *= lightMult; g *= lightMult; b *= lightMult;
-
-        // 2. Contrasto (Formula lineare standard)
-        r = r * contrast + intercept;
-        g = g * contrast + intercept;
-        b = b * contrast + intercept;
-
-        // 3. Saturazione (Luminanza pesata)
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        r = lum + saturation * (r - lum);
-        g = lum + saturation * (g - lum);
-        b = lum + saturation * (b - lum);
-
-        // 4. Temperatura (Calore)
-        if(temperature !== 0) {
-            r += (temperature * 20);
-            b -= (temperature * 20);
-        }
-
-        // 5. Punto Nero (Sottrazione diretta)
-        if(blackPoint > 0) {
-            const bVal = blackPoint * 1.5;
-            r -= bVal; g -= bVal; b -= bVal;
-        }
-
-        // --- IL FIX: Clamp dei valori tra 0 e 255 ---
-        d[i] = Math.max(0, Math.min(255, Math.round(r)));
-        d[i+1] = Math.max(0, Math.min(255, Math.round(g)));
-        d[i+2] = Math.max(0, Math.min(255, Math.round(b)));
-    }
-
-    tempCtx.putImageData(imageData, 0, 0);
-    const dataUrl = tempCv.toDataURL('image/png');
-    
-    // Rileva Mobile
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-    if (isMobile) {
-        const win = window.open();
-        if(win) {
-            win.document.write('<body style="margin:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;color:#fff;font-family:sans-serif;"><img src="'+dataUrl+'" style="max-width:95%;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5)"/><p style="margin-top:20px;font-weight:bold;">TIENI PREMUTO PER SALVARE</p><button onclick="window.close()" style="background:#444;color:#fff;border:none;padding:10px 20px;border-radius:5px;margin-top:20px">TORNA INDIETRO</button></body>');
+        if (isMobile) {
+            const win = window.open();
+            win.document.write('<body style="margin:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;color:#fff;font-family:sans-serif;"><img src="'+dataUrl+'" style="max-width:95%;border-radius:10px;"/><p>TIENI PREMUTO PER SALVARE JPG</p></body>');
         } else {
-            alert("Autorizza i pop-up per salvare!");
+            const link = document.createElement('a');
+            link.download = 'edited_photo.jpg';
+            link.href = dataUrl;
+            link.click();
         }
-    } else {
-        const link = document.createElement('a');
-        link.download = 'edited_photo.png';
-        link.href = dataUrl;
-        link.click();
     }
-}
-    function closeM() { modal.style.display='none'; }
+
+    function closeModal() { modal.style.display='none'; }
 </script>
 </body>
 </html>
