@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Photo Advisor Pixel Engine</title>
+    <style>
+        :root { --bg: #000; --accent: #00d1b2; --text: #fff; }
+        body, html { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow-x: hidden; }
+        .header { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; text-align: center; }
+        .btn-upload { background: var(--accent); color: #000; padding: 20px 40px; border-radius: 50px; font-weight: bold; cursor: pointer; font-size: 1.2rem; }
+        input[type="file"] { display: none; }
+        .options-grid { display: none; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; max-width: 1200px; margin: 0 auto; }
+        .option-card { background: #1a1a1a; border-radius: 12px; border: 1px solid #333; overflow: hidden; }
+        .option-card canvas { width: 100%; height: auto; display: block; }
+        .option-card p { font-size: 11px; padding: 10px; margin: 0; text-align: center; color: #888; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-content { background: #222; padding: 25px; border-radius: 20px; width: 85%; max-width: 350px; text-align: center; }
+        .btn { width: 100%; padding: 15px; margin: 8px 0; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; color: #fff; }
+        #manual-editor { display: none; }
+        .preview-sticky { position: sticky; top: 0; background: #000; padding: 10px; z-index: 100; border-bottom: 1px solid #333; }
+        #mainCanvas { width: 100%; border-radius: 10px; max-height: 45vh; object-fit: contain; display: block; margin: 0 auto; }
+        .controls { padding: 20px; padding-bottom: 120px; display: grid; gap: 15px; }
+        .s-box label { display: flex; justify-content: space-between; font-size: 11px; color: #aaa; text-transform: uppercase; }
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 6px; background: #333; border-radius: 10px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; background: var(--accent); border-radius: 50%; border: 2px solid #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="header" id="welcome">
+        <h1 style="margin-bottom: 30px;">Advisor Pro</h1>
+        <label class="btn-upload"> APRI FOTO <input type="file" id="upload" accept="image/*"> </label>
+    </div>
+
+    <div class="options-grid" id="grid"></div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h3 id="stName">Stile</h3>
+            <button class="btn" style="background:#28a745;" onclick="renderAndSave()">SALVA (PROCESSO PIXEL)</button>
+            <button class="btn" style="background:#007bff;" onclick="openEditor()">MODIFICA</button>
+            <button class="btn" style="background:#444;" onclick="closeM()">CHIUDI</button>
+        </div>
+    </div>
+
+    <div id="manual-editor">
+        <div class="preview-sticky">
+            <canvas id="mainCanvas"></canvas>
+            <div style="display:flex; gap:10px; margin-top:15px">
+                <button class="btn" style="background:#444; margin:0; flex:1" onclick="location.reload()">RESET</button>
+                <button class="btn" style="background:#28a745; margin:0; flex:2" onclick="renderAndSave()">SCARICA</button>
+            </div>
+        </div>
+        <div class="controls" id="sliders"></div>
+    </div>
+
+<script>
+    const upload = document.getElementById('upload');
+    const grid = document.getElementById('grid');
+    const modal = document.getElementById('modal');
+    const mainCanvas = document.getElementById('mainCanvas');
+    let img = new Image();
+    let currentVals = {};
+
+    const params = [
+        {id:'exp', n:'Esposizione'}, {id:'cont', n:'Contrasto'}, 
+        {id:'sat', n:'Saturazione'}, {id:'temp', n:'Temperatura'},
+        {id:'black', n:'Punto Nero'}
+    ];
+
+    const styles = [
+        { name: "Naturale", vals: { exp:100, bril:100, high:100, shad:100, cont:100, bright:100, black:0, sat:100, vib:100, temp:0, tint:0, sharp:0, def:100 } },
+        { name: "Vivido", vals: { exp:105, bril:115, high:95, shad:105, cont:110, bright:100, black:5, sat:130, vib:130, temp:5, tint:0, sharp:0.5, def:110 } },
+        { name: "Teal & Orange", vals: { exp:95, bril:90, high:110, shad:85, cont:120, bright:95, black:15, sat:110, vib:90, temp:-15, tint:5, sharp:0.8, def:110 } },
+        { name: "Caldo Sole", vals: { exp:105, bril:110, high:110, shad:100, cont:105, bright:105, black:0, sat:130, vib:115, temp:30, tint:-5, sharp:0.3, def:105 } },
+        { name: "Dark Moody", vals: { exp:85, bril:75, high:70, shad:120, cont:135, bright:90, black:20, sat:85, vib:100, temp:-5, tint:0, sharp:1, def:125 } },
+        { name: "B&W Classico", vals: { exp:105, bril:100, high:130, shad:80, cont:150, bright:100, black:15, sat:0, vib:0, temp:0, tint:0, sharp:1, def:130 } },
+        { name: "Soft Dream", vals: { exp:110, bril:125, high:85, shad:115, cont:90, bright:110, black:0, sat:85, vib:90, temp:5, tint:5, sharp:0, def:85 } },
+        { name: "Film Vintage", vals: { exp:105, bril:95, high:100, shad:105, cont:100, bright:100, black:12, sat:80, vib:90, temp:12, tint:8, sharp:0.4, def:95 } },
+        { name: "Urban Street", vals: { exp:100, bril:105, high:95, shad:105, cont:120, bright:95, black:10, sat:110, vib:120, temp:-15, tint:12, sharp:0.8, def:115 } },
+        { name: "Ethereal Light", vals: { exp:130, bril:140, high:80, shad:140, cont:75, bright:115, black:0, sat:70, vib:85, temp:0, tint:0, sharp:0, def:80 } },
+        { name: "Deep Contrasto", vals: { exp:95, bril:85, high:85, shad:70, cont:140, bright:85, black:35, sat:115, vib:100, temp:0, tint:0, sharp:1.5, def:140 } },
+        { name: "Pastello Dolce", vals: { exp:115, bril:120, high:95, shad:115, cont:85, bright:115, black:0, sat:140, vib:140, temp:-5, tint:-8, sharp:0, def:95 } },
+        { name: "Silver Lux", vals: { exp:115, bril:115, high:135, shad:85, cont:125, bright:105, black:10, sat:0, vib:0, temp:0, tint:0, sharp:0.6, def:115 } },
+        { name: "Neon Vibes", vals: { exp:100, bril:125, high:105, shad:105, cont:115, bright:100, black:8, sat:170, vib:170, temp:5, tint:-5, sharp:0.5, def:110 } },
+        { name: "Matte Opaco", vals: { exp:105, bril:100, high:95, shad:125, cont:85, bright:110, black:30, sat:95, vib:105, temp:5, tint:2, sharp:0.2, def:100 } },
+        { name: "Cyberpunk Pink", vals: { exp:100, bril:130, high:110, shad:90, cont:125, bright:100, black:15, sat:160, vib:150, temp:-40, tint:50, sharp:1.2, def:130 } },
+        { name: "Retro 70s", vals: { exp:105, bril:90, high:90, shad:110, cont:90, bright:105, black:5, sat:120, vib:110, temp:45, tint:10, sharp:0.2, def:90 } },
+        { name: "Cold Nordic", vals: { exp:110, bril:105, high:100, shad:115, cont:110, bright:105, black:0, sat:70, vib:80, temp:-35, tint:-5, sharp:0.8, def:115 } },
+        { name: "Sepia Memories", vals: { exp:100, bril:100, high:100, shad:100, cont:100, bright:100, black:0, sat:20, vib:10, temp:50, tint:0, sharp:0.4, def:90 } },
+        { name: "High Contrast B&W", vals: { exp:110, bril:80, high:150, shad:50, cont:200, bright:100, black:40, sat:0, vib:0, temp:0, tint:0, sharp:2, def:150 } },
+        { name: "Muted Forest", vals: { exp:95, bril:110, high:90, shad:80, cont:115, bright:95, black:10, sat:80, vib:70, temp:-10, tint:-20, sharp:0.5, def:110 } },
+        { name: "Golden Glow", vals: { exp:120, bril:130, high:130, shad:110, cont:100, bright:110, black:0, sat:150, vib:130, temp:25, tint:-10, sharp:0, def:95 } },
+        { name: "Night Vision", vals: { exp:130, bril:150, high:150, shad:100, cont:150, bright:100, black:0, sat:120, vib:100, temp:-50, tint:-60, sharp:3, def:150 } },
+        { name: "Deserto Caldo", vals: { exp:110, bril:105, high:120, shad:95, cont:115, bright:105, black:5, sat:140, vib:120, temp:40, tint:15, sharp:0.7, def:110 } },
+        { name: "Blue Hour", vals: { exp:90, bril:80, high:100, shad:90, cont:110, bright:90, black:15, sat:90, vib:110, temp:-45, tint:10, sharp:0.5, def:105 } },
+        { name: "Aria di Montagna", vals: { exp:125, bril:130, high:140, shad:110, cont:90, bright:115, black:0, sat:110, vib:140, temp:-15, tint:-5, sharp:1.2, def:115 } },
+        { name: "Pop Art Red", vals: { exp:100, bril:140, high:100, shad:100, cont:130, bright:100, black:0, sat:180, vib:160, temp:10, tint:-40, sharp:0.5, def:120 } },
+        { name: "Dramatic Sky", vals: { exp:90, bril:100, high:140, shad:60, cont:160, bright:90, black:20, sat:110, vib:130, temp:-10, tint:5, sharp:2, def:150 } },
+        { name: "Sogno Vaniglia", vals: { exp:120, bril:135, high:80, shad:140, cont:70, bright:120, black:0, sat:60, vib:80, temp:15, tint:5, sharp:0, def:85 } },
+        { name: "Midnight Purple", vals: { exp:85, bril:90, high:100, shad:80, cont:140, bright:85, black:25, sat:130, vib:110, temp:-20, tint:40, sharp:1, def:130 } },
+        { name: "Editorial Vogue", vals: { exp:110, bril:120, high:100, shad:110, cont:115, bright:105, black:5, sat:85, vib:80, temp:0, tint:0, sharp:1.5, def:110 } },
+        { name: "Kodak Portra", vals: { exp:105, bril:105, high:115, shad:105, cont:95, bright:100, black:5, sat:115, vib:105, temp:15, tint:5, sharp:0.5, def:100 } },
+        { name: "Fuji Velvia", vals: { exp:100, bril:110, high:90, shad:90, cont:120, bright:95, black:10, sat:160, vib:150, temp:-10, tint:-5, sharp:1.2, def:130 } },
+        { name: "Inferno Burn", vals: { exp:110, bril:140, high:150, shad:50, cont:160, bright:90, black:15, sat:150, vib:120, temp:50, tint:-20, sharp:1, def:140 } },
+        { name: "Ocean Deep", vals: { exp:85, bril:100, high:110, shad:70, cont:130, bright:80, black:20, sat:120, vib:100, temp:-60, tint:0, sharp:0.8, def:120 } },
+        { name: "Minimal White", vals: { exp:140, bril:120, high:80, shad:150, cont:60, bright:130, black:0, sat:30, vib:40, temp:0, tint:0, sharp:0, def:80 } },
+        { name: "Cyberpunk Green", vals: { exp:100, bril:130, high:120, shad:80, cont:140, bright:100, black:20, sat:150, vib:130, temp:-40, tint:-60, sharp:1.5, def:140 } },
+        { name: "Lomo Retro", vals: { exp:110, bril:85, high:120, shad:80, cont:130, bright:110, black:25, sat:160, vib:140, temp:20, tint:20, sharp:0.5, def:110 } },
+        { name: "Cold Horror", vals: { exp:80, bril:60, high:70, shad:140, cont:170, bright:80, black:50, sat:40, vib:30, temp:-30, tint:10, sharp:3, def:150 } },
+        { name: "Sunset Miami", vals: { exp:105, bril:130, high:130, shad:110, cont:110, bright:100, black:0, sat:180, vib:160, temp:20, tint:40, sharp:0.5, def:110 } },
+        { name: "Mars Explorer", vals: { exp:100, bril:110, high:130, shad:70, cont:140, bright:95, black:15, sat:150, vib:110, temp:60, tint:30, sharp:1.5, def:130 } },
+        { name: "Toxic Waste", vals: { exp:115, bril:150, high:140, shad:110, cont:150, bright:105, black:0, sat:140, vib:150, temp:-20, tint:-60, sharp:1, def:140 } },
+        { name: "Polaroid Fade", vals: { exp:110, bril:100, high:90, shad:130, cont:85, bright:115, black:35, sat:70, vib:80, temp:10, tint:5, sharp:0, def:85 } },
+        { name: "Black Metal", vals: { exp:90, bril:70, high:140, shad:40, cont:200, bright:80, black:60, sat:0, vib:0, temp:0, tint:0, sharp:4, def:150 } },
+        { name: "Vibrant Sky", vals: { exp:105, bril:125, high:150, shad:100, cont:115, bright:110, black:0, sat:160, vib:180, temp:-15, tint:5, sharp:0.8, def:120 } },
+        { name: "Coffee Shop", vals: { exp:100, bril:110, high:110, shad:120, cont:90, bright:105, black:15, sat:60, vib:50, temp:25, tint:10, sharp:0.2, def:95 } },
+        { name: "Acid Trip", vals: { exp:110, bril:140, high:100, shad:100, cont:130, bright:100, black:0, sat:200, vib:200, temp:-60, tint:60, sharp:1, def:130 } },
+        { name: "Moonlight Blue", vals: { exp:70, bril:90, high:120, shad:110, cont:120, bright:75, black:40, sat:60, vib:50, temp:-60, tint:20, sharp:0.5, def:110 } },
+        { name: "Autumn Leaf", vals: { exp:100, bril:110, high:110, shad:95, cont:105, bright:100, black:5, sat:160, vib:130, temp:40, tint:-30, sharp:0.7, def:115 } },
+        { name: "Silver Screen", vals: { exp:115, bril:110, high:120, shad:100, cont:125, bright:110, black:10, sat:10, vib:10, temp:-10, tint:0, sharp:1.2, def:120 } }
+    ];
+
+    // Setup iniziale controlli
+    params.forEach(p => {
+        const d = document.createElement('div');
+        d.className = 's-box';
+        d.innerHTML = `<label>${p.n} <span id="v-${p.id}">100</span></label>
+                       <input type="range" id="i-${p.id}" min="0" max="200" value="100">`;
+        document.getElementById('sliders').appendChild(d);
+    });
+
+    upload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            document.getElementById('welcome').style.display = 'none';
+            grid.style.display = 'grid';
+            renderGrid();
+        };
+    });
+
+    function getF(v) {
+        return `brightness(${v.exp || 100}%) contrast(${v.cont || 100}%) saturate(${v.sat || 100}%) sepia(${v.temp || 0}%) brightness(${100 - ((v.black || 0)/2)}%)`;
+    }
+
+    function renderGrid() {
+        grid.innerHTML = '';
+        styles.forEach(s => {
+            const card = document.createElement('div');
+            card.className = 'option-card';
+            const cv = document.createElement('canvas');
+            const ctx = cv.getContext('2d');
+            const sc = 300 / img.width;
+            cv.width = img.width * sc; cv.height = img.height * sc;
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
+            cv.style.filter = getF(s.vals);
+            card.innerHTML = `<p>${s.name}</p>`;
+            card.prepend(cv);
+            card.onclick = () => { currentVals = s.vals; document.getElementById('stName').innerText = s.name; modal.style.display='flex'; };
+            grid.appendChild(card);
+        });
+    }
+
+    function openEditor() {
+        modal.style.display='none'; grid.style.display='none';
+        document.getElementById('manual-editor').style.display='block';
+        mainCanvas.width = img.width; mainCanvas.height = img.height;
+        mainCanvas.getContext('2d').drawImage(img, 0, 0);
+        params.forEach(p => {
+            const el = document.getElementById('i-'+p.id);
+            el.value = currentVals[p.id] || 100;
+            document.getElementById('v-'+p.id).innerText = el.value;
+        });
+        updatePreview();
+        window.scrollTo(0,0);
+    }
+
+    function updatePreview() {
+        const v = {};
+        params.forEach(p => {
+            v[p.id] = document.getElementById('i-'+p.id).value;
+            document.getElementById('v-'+p.id).innerText = v[p.id];
+        });
+        mainCanvas.style.filter = getF(v);
+        currentVals = v;
+    }
+
+    document.querySelectorAll('input[type="range"]').forEach(i => i.oninput = updatePreview);
+
+   function renderAndSave() {
+    const tempCv = document.createElement('canvas');
+    const tempCtx = tempCv.getContext('2d');
+    
+    // Ridimensionamento per sicurezza memoria (Max 1600px per mobile)
+    const maxD = 1600;
+    let w = img.width, h = img.height;
+    if(w > maxD || h > maxD) {
+        const r = Math.min(maxD/w, maxD/h);
+        w *= r; h *= r;
+    }
+    
+    tempCv.width = w; tempCv.height = h;
+    tempCtx.drawImage(img, 0, 0, w, h);
+
+    const imageData = tempCtx.getImageData(0, 0, w, h);
+    const d = imageData.data;
+
+    // Estrazione parametri (Default 100 o 0)
+    const exposure = (currentVals.exp || 100) / 100;
+    const contrast = (currentVals.cont || 100) / 100;
+    const saturation = (currentVals.sat || 100) / 100;
+    const temperature = (currentVals.temp || 0) / 100;
+    const blackPoint = (currentVals.black || 0); // Valore 0-100
+    const brightness = (currentVals.bright || 100) / 100;
+
+    // Calcolo fattore contrasto
+    const intercept = 128 * (1 - contrast);
+
+    for (let i = 0; i < d.length; i += 4) {
+        let r = d[i], g = d[i+1], b = d[i+2];
+
+        // 1. Esposizione e Luminosità
+        const lightMult = exposure * brightness;
+        r *= lightMult; g *= lightMult; b *= lightMult;
+
+        // 2. Contrasto (Formula lineare standard)
+        r = r * contrast + intercept;
+        g = g * contrast + intercept;
+        b = b * contrast + intercept;
+
+        // 3. Saturazione (Luminanza pesata)
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        r = lum + saturation * (r - lum);
+        g = lum + saturation * (g - lum);
+        b = lum + saturation * (b - lum);
+
+        // 4. Temperatura (Calore)
+        if(temperature !== 0) {
+            r += (temperature * 20);
+            b -= (temperature * 20);
+        }
+
+        // 5. Punto Nero (Sottrazione diretta)
+        if(blackPoint > 0) {
+            const bVal = blackPoint * 1.5;
+            r -= bVal; g -= bVal; b -= bVal;
+        }
+
+        // --- IL FIX: Clamp dei valori tra 0 e 255 ---
+        d[i] = Math.max(0, Math.min(255, Math.round(r)));
+        d[i+1] = Math.max(0, Math.min(255, Math.round(g)));
+        d[i+2] = Math.max(0, Math.min(255, Math.round(b)));
+    }
+
+    tempCtx.putImageData(imageData, 0, 0);
+    const dataUrl = tempCv.toDataURL('image/png');
+    
+    // Rileva Mobile
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+        const win = window.open();
+        if(win) {
+            win.document.write('<body style="margin:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;color:#fff;font-family:sans-serif;"><img src="'+dataUrl+'" style="max-width:95%;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5)"/><p style="margin-top:20px;font-weight:bold;">TIENI PREMUTO PER SALVARE</p><button onclick="window.close()" style="background:#444;color:#fff;border:none;padding:10px 20px;border-radius:5px;margin-top:20px">TORNA INDIETRO</button></body>');
+        } else {
+            alert("Autorizza i pop-up per salvare!");
+        }
+    } else {
+        const link = document.createElement('a');
+        link.download = 'edited_photo.png';
+        link.href = dataUrl;
+        link.click();
+    }
+}
+    function closeM() { modal.style.display='none'; }
+</script>
+</body>
+</html>
